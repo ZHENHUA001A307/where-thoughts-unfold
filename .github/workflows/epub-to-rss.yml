@@ -51,17 +51,17 @@ jobs:
 
           # 进度
           if not os.path.exists(PROGRESS):
-              with open(PROGRESS, 'w') as f: json.dump({'last_index': 0}, f)
-          with open(PROGRESS) as f:
+              with open(PROGRESS, 'w', encoding='utf-8') as f: json.dump({'last_index': 0}, f)
+          with open(PROGRESS, encoding='utf-8-sig') as f:
               last_index = json.load(f).get('last_index', 0)
 
           # 读 manifest
           if not os.path.exists(MANIFEST):
               print('No manifest, skip.')
               exit(0)
-          with open(MANIFEST, encoding='utf-8') as f:
+              with open(MANIFEST, encoding='utf-8-sig') as f:
               items = json.load(f)
-
+          
           # 找下一条
           next_item = None
           for it in items:
@@ -173,7 +173,7 @@ jobs:
           </rss>'''
 
           with open(FEED, 'w', encoding='utf-8') as f: f.write(rss)
-          with open(PROGRESS, 'w') as f: json.dump({'last_index': current_index}, f)
+          with open(PROGRESS, 'w', encoding='utf-8') as f: json.dump({'last_index': current_index}, f)
           print(f'Done: {title}')
 
       - name: Commit

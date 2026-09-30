@@ -24,7 +24,7 @@ jobs:
           import os, json, csv, datetime
           import xml.etree.ElementTree as ET
 
-          with open('config/config.json', encoding='utf-8') as f:
+          with open('config/config.json', encoding='utf-8-sig') as f:
               cfg = json.load(f)
 
           FEED_TITLE = cfg['feed']['title']
