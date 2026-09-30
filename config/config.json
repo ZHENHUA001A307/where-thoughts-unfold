@@ -1,0 +1,16 @@
+{
+    "feed":  {
+                 "title":  "副刊：心灵花园",
+                 "description":  "中西方散文/现代诗歌推送",
+                 "link":  "https://github.com/ZHENHUA001A307/where-thoughts-unfold",
+                 "rss_size":  20
+             },
+    "epub":  {
+                 "reading_speed":  300,
+                 "image_base_url":  "https://raw.githubusercontent.com/ZHENHUA001A307/where-thoughts-unfold/main/image/"
+             },
+    "csv":  {
+                "source_file":  "data/source.csv",
+                "has_header":  true
+            }
+}

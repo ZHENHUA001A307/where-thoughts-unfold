@@ -1,0 +1,112 @@
+name: CSV to RSS
+
+on:
+  schedule:
+    - cron: '0 1 * * 5'
+  workflow_dispatch:
+
+concurrency:
+  group: rss-update-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate feed
+        shell: python
+        run: |
+          import os, json, csv, datetime
+          import xml.etree.ElementTree as ET
+
+          with open('config/config.json', encoding='utf-8') as f:
+              cfg = json.load(f)
+
+          FEED_TITLE = cfg['feed']['title']
+          FEED_DESC  = cfg['feed']['description']
+          FEED_LINK  = cfg['feed']['link']
+          RSS_SIZE   = cfg['feed']['rss_size']
+          SRC        = cfg['csv']['source_file']
+          HAS_HEADER = cfg['csv']['has_header']
+          PROGRESS   = 'data/progress.csv.txt'
+          FEED       = 'feed.xml'
+
+          # 进度
+          if not os.path.exists(PROGRESS):
+              with open(PROGRESS, 'w') as f: f.write('0')
+          with open(PROGRESS) as f:
+              try: idx = int(f.read().strip())
+              except: idx = 0
+
+          # 读 CSV
+          rows = []
+          if os.path.exists(SRC):
+              with open(SRC, encoding='utf-8') as f:
+                  rows = [r for r in csv.reader(f) if r]
+              if HAS_HEADER and rows:
+                  rows = rows[1:]
+
+          if idx >= len(rows):
+              print('All CSV rows done.')
+              exit(0)
+
+          row = rows[idx]
+          title = row[0].strip() if len(row) > 0 else '无标题'
+          link  = row[1].strip() if len(row) > 1 else ''
+          body  = row[2].strip() if len(row) > 2 else ''
+          pub   = datetime.datetime.now().strftime('%a, %d %b %Y %H:%M:%S +0000')
+          guid  = link if link else f'csv-{idx}'
+
+          new_item = f'''<item>
+          <title><![CDATA[{title}]]></title>
+          <link>{link}</link>
+          <description><![CDATA[{body}]]></description>
+          <guid isPermaLink="false">{guid}</guid>
+          <pubDate>{pub}</pubDate>
+          </item>'''
+
+          # 读旧 feed 所有 item
+          old = []
+          if os.path.exists(FEED):
+              try:
+                  root = ET.parse(FEED).getroot()
+                  for it in root.findall('./channel/item'):
+                      pub_el = it.find('pubDate')
+                      old.append((pub_el.text if pub_el is not None else '', ET.tostring(it, encoding='unicode')))
+              except Exception as e:
+                  print(f'Parse error: {e}')
+
+          # 新条目
+          old.append((pub, new_item))
+
+          # 按 pubDate 倒序，取前 RSS_SIZE
+          old.sort(key=lambda x: x[0], reverse=True)
+          final = [x[1] for x in old[:RSS_SIZE]]
+
+          rss = f'''<?xml version="1.0" encoding="UTF-8" ?>
+          <rss version="2.0">
+          <channel>
+          <title>{FEED_TITLE}</title>
+          <link>{FEED_LINK}</link>
+          <description>{FEED_DESC}</description>
+          <lastBuildDate>{pub}</lastBuildDate>
+          {chr(10).join(final)}
+          </channel>
+          </rss>'''
+
+          with open(FEED, 'w', encoding='utf-8') as f: f.write(rss)
+          with open(PROGRESS, 'w') as f: f.write(str(idx + 1))
+          print(f'Done: {title}')
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add feed.xml data/progress.csv.txt
+          git commit -m "CSV RSS update: $(date)" || exit 0
+          git push

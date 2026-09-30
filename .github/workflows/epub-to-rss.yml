@@ -1,0 +1,185 @@
+name: EPUB to RSS
+
+on:
+  schedule:
+    - cron: '0 1 * * 2'
+  workflow_dispatch:
+
+concurrency:
+  group: rss-update-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: pip install ebooklib beautifulsoup4 lxml
+
+      - name: Generate feed
+        shell: python
+        run: |
+          import os, json, re, math, zipfile, datetime
+          import xml.etree.ElementTree as ET
+          from bs4 import BeautifulSoup
+          import ebooklib
+          from ebooklib import epub
+
+          with open('config/config.json', encoding='utf-8') as f:
+              cfg = json.load(f)
+
+          FEED_TITLE  = cfg['feed']['title']
+          FEED_DESC   = cfg['feed']['description']
+          FEED_LINK   = cfg['feed']['link']
+          RSS_SIZE    = cfg['feed']['rss_size']
+          SPEED       = cfg['epub']['reading_speed']
+          IMG_BASE    = cfg['epub']['image_base_url']
+          PROGRESS    = 'progress.epub.json'
+          FEED        = 'feed.xml'
+          MANIFEST    = 'books/manifest.json'
+
+          os.makedirs('image', exist_ok=True)
+
+          # 进度
+          if not os.path.exists(PROGRESS):
+              with open(PROGRESS, 'w') as f: json.dump({'last_index': 0}, f)
+          with open(PROGRESS) as f:
+              last_index = json.load(f).get('last_index', 0)
+
+          # 读 manifest
+          if not os.path.exists(MANIFEST):
+              print('No manifest, skip.')
+              exit(0)
+          with open(MANIFEST, encoding='utf-8') as f:
+              items = json.load(f)
+
+          # 找下一条
+          next_item = None
+          for it in items:
+              if it['index'] > last_index:
+                  next_item = it
+                  break
+
+          if not next_item:
+              print('All EPUB items done.')
+              exit(0)
+
+          current_index = next_item['index']
+          target_file = os.path.join('books', next_item['file'])
+          if not os.path.exists(target_file):
+              print(f'Missing file: {target_file}')
+              exit(0)
+
+          content_html = ''
+          image_map = {}
+
+          def safe(name):
+              return re.sub(r'[^\w\.-]', '_', os.path.basename(name))
+
+          # 解析（含容错）
+          try:
+              book = epub.read_epub(target_file)
+              for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
+                  try:
+                      n = f'{current_index}_{safe(item.get_name())}'
+                      with open(os.path.join('image', n), 'wb') as f:
+                          f.write(item.get_content())
+                      image_map[item.get_name()] = n
+                  except: pass
+              for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
+                  soup = BeautifulSoup(item.get_content().decode('utf-8', 'ignore'), 'html.parser')
+                  for img in soup.find_all('img'):
+                      src = img.get('src', '')
+                      for k, v in image_map.items():
+                          if os.path.basename(src) == os.path.basename(k):
+                              img['src'] = IMG_BASE + v
+                              break
+                  body = soup.find('body')
+                  if body: content_html += ''.join(str(c) for c in body.contents)
+          except Exception as e:
+              print(f'Fallback mode: {e}')
+              with zipfile.ZipFile(target_file) as z:
+                  for p in z.namelist():
+                      if p.lower().endswith(('.jpg','.jpeg','.png','.gif','.webp')):
+                          n = f'{current_index}_{safe(p)}'
+                          with open(os.path.join('image', n), 'wb') as f:
+                              f.write(z.read(p))
+                          image_map[p] = n
+                  for p in sorted([x for x in z.namelist() if x.lower().endswith(('.html','.xhtml'))]):
+                      soup = BeautifulSoup(z.read(p).decode('utf-8', 'ignore'), 'html.parser')
+                      for img in soup.find_all('img'):
+                          src = img.get('src', '')
+                          for k, v in image_map.items():
+                              if os.path.basename(src) == os.path.basename(k):
+                                  img['src'] = IMG_BASE + v
+                                  break
+                      body = soup.find('body')
+                      if body: content_html += ''.join(str(c) for c in body.contents)
+
+          text = BeautifulSoup(content_html, 'html.parser').get_text().strip()
+          wc = len(text)
+          rt = math.ceil(wc / SPEED)
+          header = f"<p style='color:#888;'>⏱ 预计阅读时间：{rt} 分钟 ({wc} 字)</p><hr>"
+          content_html = header + content_html
+
+          pub = datetime.datetime.now().strftime('%a, %d %b %Y %H:%M:%S +0000')
+          title = next_item.get('title') or next_item['file']
+          new_item = f'''<item>
+          <title><![CDATA[{title}]]></title>
+          <description><![CDATA[{content_html}]]></description>
+          <pubDate>{pub}</pubDate>
+          <guid isPermaLink="false">epub-{current_index}</guid>
+          </item>'''
+
+          # 读旧 feed
+          old = [(pub, new_item)]
+          if os.path.exists(FEED):
+              try:
+                  root = ET.parse(FEED).getroot()
+                  for it in root.findall('./channel/item'):
+                      p = it.find('pubDate')
+                      old.append((p.text if p is not None else '', ET.tostring(it, encoding='unicode')))
+              except Exception as e:
+                  print(f'Parse error: {e}')
+
+          old.sort(key=lambda x: x[0], reverse=True)
+          final = [x[1] for x in old[:RSS_SIZE]]
+          items_block = '\n'.join(final)
+
+          # 清理未使用图片
+          needed = set(re.findall(r'image/([\w\.-]+)', items_block))
+          for img in os.listdir('image'):
+              if img not in needed:
+                  os.remove(os.path.join('image', img))
+
+          rss = f'''<?xml version="1.0" encoding="UTF-8" ?>
+          <rss version="2.0">
+          <channel>
+          <title>{FEED_TITLE}</title>
+          <link>{FEED_LINK}</link>
+          <description>{FEED_DESC}</description>
+          <lastBuildDate>{pub}</lastBuildDate>
+          {items_block}
+          </channel>
+          </rss>'''
+
+          with open(FEED, 'w', encoding='utf-8') as f: f.write(rss)
+          with open(PROGRESS, 'w') as f: json.dump({'last_index': current_index}, f)
+          print(f'Done: {title}')
+
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add feed.xml progress.epub.json image/
+          git commit -m "EPUB RSS update: $(date)" || exit 0
+          git push
