@@ -34,7 +34,7 @@ jobs:
           import ebooklib
           from ebooklib import epub
 
-          with open('config/config.json', encoding='utf-8') as f:
+          with open('config/config.json', encoding='utf-8-sig') as f:
               cfg = json.load(f)
 
           FEED_TITLE  = cfg['feed']['title']
@@ -49,20 +49,21 @@ jobs:
 
           os.makedirs('image', exist_ok=True)
 
-          # 进度
+          # progress
           if not os.path.exists(PROGRESS):
-              with open(PROGRESS, 'w', encoding='utf-8') as f: json.dump({'last_index': 0}, f)
+              with open(PROGRESS, 'w', encoding='utf-8') as f:
+                  json.dump({'last_index': 0}, f)
           with open(PROGRESS, encoding='utf-8-sig') as f:
               last_index = json.load(f).get('last_index', 0)
 
-          # 读 manifest
+          # manifest
           if not os.path.exists(MANIFEST):
               print('No manifest, skip.')
               exit(0)
-              with open(MANIFEST, encoding='utf-8-sig') as f:
+          with open(MANIFEST, encoding='utf-8-sig') as f:
               items = json.load(f)
-          
-          # 找下一条
+
+          # find next
           next_item = None
           for it in items:
               if it['index'] > last_index:
@@ -85,7 +86,6 @@ jobs:
           def safe(name):
               return re.sub(r'[^\w\.-]', '_', os.path.basename(name))
 
-          # 解析（含容错）
           try:
               book = epub.read_epub(target_file)
               for item in book.get_items_of_type(ebooklib.ITEM_IMAGE):
@@ -94,7 +94,8 @@ jobs:
                       with open(os.path.join('image', n), 'wb') as f:
                           f.write(item.get_content())
                       image_map[item.get_name()] = n
-                  except: pass
+                  except:
+                      pass
               for item in book.get_items_of_type(ebooklib.ITEM_DOCUMENT):
                   soup = BeautifulSoup(item.get_content().decode('utf-8', 'ignore'), 'html.parser')
                   for img in soup.find_all('img'):
@@ -104,7 +105,8 @@ jobs:
                               img['src'] = IMG_BASE + v
                               break
                   body = soup.find('body')
-                  if body: content_html += ''.join(str(c) for c in body.contents)
+                  if body:
+                      content_html += ''.join(str(c) for c in body.contents)
           except Exception as e:
               print(f'Fallback mode: {e}')
               with zipfile.ZipFile(target_file) as z:
@@ -123,7 +125,8 @@ jobs:
                                   img['src'] = IMG_BASE + v
                                   break
                       body = soup.find('body')
-                      if body: content_html += ''.join(str(c) for c in body.contents)
+                      if body:
+                          content_html += ''.join(str(c) for c in body.contents)
 
           text = BeautifulSoup(content_html, 'html.parser').get_text().strip()
           wc = len(text)
@@ -140,7 +143,6 @@ jobs:
           <guid isPermaLink="false">epub-{current_index}</guid>
           </item>'''
 
-          # 读旧 feed
           old = [(pub, new_item)]
           if os.path.exists(FEED):
               try:
@@ -155,7 +157,6 @@ jobs:
           final = [x[1] for x in old[:RSS_SIZE]]
           items_block = '\n'.join(final)
 
-          # 清理未使用图片
           needed = set(re.findall(r'image/([\w\.-]+)', items_block))
           for img in os.listdir('image'):
               if img not in needed:
@@ -172,8 +173,10 @@ jobs:
           </channel>
           </rss>'''
 
-          with open(FEED, 'w', encoding='utf-8') as f: f.write(rss)
-          with open(PROGRESS, 'w', encoding='utf-8') as f: json.dump({'last_index': current_index}, f)
+          with open(FEED, 'w', encoding='utf-8') as f:
+              f.write(rss)
+          with open(PROGRESS, 'w', encoding='utf-8') as f:
+              json.dump({'last_index': current_index}, f)
           print(f'Done: {title}')
 
       - name: Commit

@@ -36,17 +36,18 @@ jobs:
           PROGRESS   = 'data/progress.csv.txt'
           FEED       = 'feed.xml'
 
-          # 进度
           if not os.path.exists(PROGRESS):
-              with open(PROGRESS, 'w') as f: f.write('0')
-          with open(PROGRESS) as f:
-              try: idx = int(f.read().strip())
-              except: idx = 0
+              with open(PROGRESS, 'w', encoding='utf-8') as f:
+                  f.write('0')
+          with open(PROGRESS, encoding='utf-8-sig') as f:
+              try:
+                  idx = int(f.read().strip())
+              except:
+                  idx = 0
 
-          # 读 CSV
           rows = []
           if os.path.exists(SRC):
-              with open(SRC, encoding='utf-8') as f:
+              with open(SRC, encoding='utf-8-sig') as f:
                   rows = [r for r in csv.reader(f) if r]
               if HAS_HEADER and rows:
                   rows = rows[1:]
@@ -70,7 +71,6 @@ jobs:
           <pubDate>{pub}</pubDate>
           </item>'''
 
-          # 读旧 feed 所有 item
           old = []
           if os.path.exists(FEED):
               try:
@@ -81,10 +81,8 @@ jobs:
               except Exception as e:
                   print(f'Parse error: {e}')
 
-          # 新条目
           old.append((pub, new_item))
 
-          # 按 pubDate 倒序，取前 RSS_SIZE
           old.sort(key=lambda x: x[0], reverse=True)
           final = [x[1] for x in old[:RSS_SIZE]]
 
@@ -99,8 +97,10 @@ jobs:
           </channel>
           </rss>'''
 
-          with open(FEED, 'w', encoding='utf-8') as f: f.write(rss)
-          with open(PROGRESS, 'w') as f: f.write(str(idx + 1))
+          with open(FEED, 'w', encoding='utf-8') as f:
+              f.write(rss)
+          with open(PROGRESS, 'w', encoding='utf-8') as f:
+              f.write(str(idx + 1))
           print(f'Done: {title}')
 
       - name: Commit
