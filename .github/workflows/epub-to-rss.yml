@@ -1,8 +1,8 @@
 name: EPUB to RSS
 
 on:
-  schedule:
-    - cron: '* * * * 3,6'
+  # schedule: (disabled)
+    # - cron: '* * * * 3,6'
   workflow_dispatch:
 
 concurrency:
