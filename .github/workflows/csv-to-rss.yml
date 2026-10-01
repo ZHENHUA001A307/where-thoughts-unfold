@@ -1,8 +1,8 @@
 name: CSV to RSS
 
 on:
-  # schedule: (disabled)
-    # - cron: '* * * * *'
+  schedule:
+    - cron: '0 0 1 1 *'
   workflow_dispatch:
 
 concurrency:
