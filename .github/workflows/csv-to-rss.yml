@@ -24,8 +24,8 @@ jobs:
         shell: python
         run: |
           import os, json, csv, datetime
-          import xml.etree.ElementTree as ET
-
+${indent}import xml.etree.ElementTree as ET
+          os.makedirs('data', exist_ok=True)
           with open('config/config.json', encoding='utf-8-sig') as f:
               cfg = json.load(f)
 
